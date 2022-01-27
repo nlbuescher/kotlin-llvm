@@ -1,102 +1,85 @@
-import TokenType.*
-import platform.posix.*
+package kotlin_llvm
 
-/*
-# Compute the nth fibonacci number
-def fib(n)
-	if x < 3 then
-		1
-	else
-		fib(x - 1) + fib (x - 2)
 
-# this expression will compute the 40th number
-fib(40)
-*/
-/*
-extern sin(arg);
-extern cos(arg);
-extern atan2(arg1 arg2);
+sealed class Node
 
-atan2(sin(.4), cos(42))
-*/
+sealed class Expression : Node()
 
-enum class TokenType {
-	// commands
-	Def,
-	Extern,
+data class NumberExpression(val number: Number) : Expression()
 
-	// primary
-	Identifier,
-	Number
-}
+data class VariableExpression(val name: String) : Expression()
 
-data class Token(
-	val type: TokenType,
-	val column: Int,
-	val value: String? = null,
-)
+data class BinaryExpression(val op: String, val lhs: Expression, val rhs: Expression) : Expression()
 
-fun lexLine(line: String): List<Token> = buildList {
+data class CallExpression(val callee: String, val args: List<String>) : Expression()
+
+data class Prototype(val name: String, val args: List<String>) : Node()
+
+data class Function(val prototype: Prototype, val body: Expression) : Node()
+
+
+fun parseTokens(tokens: List<Token>): List<Node> {
+	val nodes = mutableListOf<Node>()
+
 	var index = 0
+	while (index < tokens.size) {
+		// top ::= definition | external | expression
+		when (tokens[index]) {
+			is DefToken -> {
+				val def = tokens[index++]
 
-	while (index < line.length) {
-		// skip whitespace
-		while (line.getOrNull(index)?.isWhitespace() == true)
-			index += 1
+				val funName = tokens.getOrNull(index++)
+					?: compilerError("Expected function name in prototype", def.loc)
 
-		if (line.getOrNull(index)?.isLetter() == true) {
-			val column = index + 1
+				if (funName !is WordToken)
+					compilerError("Expected function name in prototype, got '$funName'", funName.loc)
 
-			val string = buildString {
-				append(line[index])
-				while (line.getOrNull(++index)?.isLetterOrDigit() == true)
-					append(line[index])
-			}
+				val openParen = tokens.getOrNull(index++)
+					?: compilerError("Expected opening parenthesis in prototype", funName.loc)
 
-			when (string) {
-				"def" -> add(Token(Def, column))
-				"extern" -> add(Token(Extern, column))
-				else -> add(Token(Identifier, column, value = string))
-			}
+				if (openParen !is WordToken || openParen.value != "(")
+					compilerError("Expected opening parenthesis in prototype, got '$openParen'", openParen.loc)
 
-			continue
-		}
+				val argNames = mutableListOf<String>()
+				while (true) {
+					val token = tokens.getOrNull(index++)
+						?: compilerError("Expected argument name or closing parenthesis in prototype", funName.loc)
 
-		if (line.getOrNull(index)?.isDigit() == true || line.getOrNull(index) == '.') {
-			val column = index + 1
-
-			var foundDot = false
-			val number = buildString {
-				do {
-					if (foundDot && line[index] == '.') {
-						compileError(column, "Invalid number. Numbers may have at most one decimal")
+					if (token as? WordToken == null
+						|| (token.value != ")" && token.value.any { !it.isLetterOrDigit() })
+					) {
+						compilerError("Expected argument name or closing parenthesis in prototype, got '$token'", token.loc)
 					}
 
-					foundDot = foundDot || line[index] == '.'
-					append(line[index++])
+					if (token.value == ")") {
+						// finish prototype
+						nodes.add(Prototype(funName.value, argNames))
+						break
+					}
+					else {
+						argNames.add(token.value)
+					}
 				}
-				while (line.getOrNull(index)?.isDigit() == true || line.getOrNull(index) == '.')
 			}
-
-			add(Token(Number, column, value = number))
-			continue
-		}
-
-		if (line.getOrNull(index) == '#') {
-			// comment until end of line
-			break
+			is ExternToken -> {
+				TODO("parsing extern declarations is not implemented yet")
+			}
+			else -> {
+				TODO("parsing expressions is not implemented yet")
+			}
 		}
 	}
+	return nodes
 }
 
-fun compileError(column: Int, message: Any?) {
-	fprintf(stderr, "ERROR at column $column: $message\n")
-	exit(1)
-}
+/*******************
+ * MAIN            *
+ *******************/
 
 fun main() {
-	val tokens = lexLine(readln())
-	tokens.forEach {
-		println(it)
-	}
+	val tokens = lexFile("test.kaleidoscope")
+	tokens.forEach(::println)
+
+	val nodes = parseTokens(tokens)
+	nodes.forEach(::println)
 }

@@ -20,7 +20,7 @@ kotlin {
 	nativeTarget.apply {
 		binaries {
 			executable {
-				entryPoint = "main"
+				entryPoint = "kotlin_llvm.main"
 				runTask?.standardInput = System.`in`
 			}
 		}
